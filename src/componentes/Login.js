@@ -1,6 +1,6 @@
 // src/componentes/Login.js
 import React, { useState } from 'react';
-import { View, TextInput, Button, Text, StyleSheet } from 'react-native';
+import { View, TextInput, TouchableOpacity, Text, StyleSheet } from 'react-native';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../../firebase/firebaseConfig';
 import { useNavigation } from '@react-navigation/native';
@@ -21,10 +21,12 @@ export default function Login() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.titulo}>Iniciar Sesión</Text>
+      <Text style={styles.titulo}>Portal Multiverso</Text>
+      <Text style={styles.subtitulo}>Inicia sesión para explorar</Text>
 
       <TextInput
         placeholder="Correo electrónico"
+        placeholderTextColor="#6b7280"
         value={correo}
         onChangeText={setCorreo}
         style={styles.input}
@@ -33,39 +35,39 @@ export default function Login() {
       />
       <TextInput
         placeholder="Contraseña"
+        placeholderTextColor="#6b7280"
         value={contrasena}
         onChangeText={setContrasena}
         style={styles.input}
         secureTextEntry
       />
 
-      <Button title="Ingresar" onPress={handleLogin} />
-      <View style={{ marginTop: 10 }}>
-        <Button
-          title="¿No tienes cuenta? Regístrate"
-          onPress={() => navigation.navigate('Registro')}
-        />
-      </View>
+      <TouchableOpacity style={styles.botonPrincipal} onPress={handleLogin}>
+        <Text style={styles.textoBoton}>Ingresar</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.botonSecundario} onPress={() => navigation.navigate('Registro')}>
+        <Text style={styles.textoSecundario}>¿No tienes cuenta? Regístrate</Text>
+      </TouchableOpacity>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    padding: 20,
-  },
-  titulo: {
-    fontSize: 24,
-    marginBottom: 20,
-    textAlign: 'center',
-  },
+  container: { flex: 1, justifyContent: 'center', padding: 24, backgroundColor: '#0b0f19' },
+  titulo: { fontSize: 28, fontWeight: 'bold', color: '#22c55e', textAlign: 'center' },
+  subtitulo: { fontSize: 14, color: '#9ca3af', textAlign: 'center', marginBottom: 24 },
   input: {
+    backgroundColor: '#111827',
+    color: '#fff',
     borderWidth: 1,
-    borderColor: '#ccc',
-    padding: 12,
-    marginBottom: 12,
-    borderRadius: 6,
+    borderColor: '#1f2937',
+    padding: 14,
+    marginBottom: 14,
+    borderRadius: 10,
   },
+  botonPrincipal: { backgroundColor: '#22c55e', padding: 14, borderRadius: 10, alignItems: 'center', marginTop: 6 },
+  textoBoton: { color: '#0b0f19', fontWeight: 'bold', fontSize: 16 },
+  botonSecundario: { marginTop: 16, alignItems: 'center' },
+  textoSecundario: { color: '#38bdf8', fontSize: 14 },
 });

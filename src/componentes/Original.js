@@ -1,241 +1,206 @@
+// src/componentes/Original.js
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, Image, StyleSheet, Alert, ActivityIndicator, ScrollView } from 'react-native';
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
-import { db, auth } from '../../firebase/firebaseConfig';
-import { onAuthStateChanged } from 'firebase/auth';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  Image,
+  StyleSheet,
+  ActivityIndicator,
+  ScrollView,
+} from 'react-native';
+import { doc, getDoc, updateDoc, addDoc, collection, increment } from 'firebase/firestore';
+import { auth, db } from '../../firebase/firebaseConfig';
 
+export default function Original() {
+  const [correcto, setCorrecto] = useState(null);
+  const [opciones, setOpciones] = useState([]);
+  const [seleccionado, setSeleccionado] = useState(null);
+  const [ganados, setGanados] = useState(0);
+  const [perdidos, setPerdidos] = useState(0);
+  const [racha, setRacha] = useState(0);
+  const [cargando, setCargando] = useState(true);
 
-const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ-:.\' '.split('');
-const MAX_ATTEMPTS = 5;
+  const uid = auth.currentUser?.uid;
 
-export default function JuegoPokemon() {
-  const [pokemonName, setPokemonName] = useState('');
-  const [pokemonImage, setPokemonImage] = useState('');
-  const [pokemonId, setPokemonId] = useState('');
-  const [guessedLetters, setGuessedLetters] = useState([]);
-  const [wrongGuesses, setWrongGuesses] = useState(0);
-  const [gameOver, setGameOver] = useState(false);
-  const [gameWon, setGameWon] = useState(false);
-  const [loading, setLoading] = useState(true);
-
-  const [userWin, setUserWin] = useState(0);
-  const [userLose, setUserLose] = useState(0);
-  const [uid, setUid] = useState(null); // Agrega estado uid correctamente
-
-  // Escuchar el login del usuario
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        setUid(user.uid);
-      }
-    });
-    return unsubscribe;
-  }, []);
-
- // Obtener datos del usuario
   useEffect(() => {
     if (!uid) return;
-    const traerDatos = async () => {
-      const docRef = doc(db, 'usuarios', uid);
-      const docSnap = await getDoc(docRef);
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        setUserWin(data.ganados || 0);
-        setUserLose(data.perdidos || 0);
-      } else {
-        await setDoc(docRef, { ganados: 0, perdidos: 0 }); // inicializar si no existe
-        setUserWin(0);
-        setUserLose(0);
+    const cargarEstadisticas = async () => {
+      const snap = await getDoc(doc(db, 'usuarios', uid));
+      if (snap.exists()) {
+        setGanados(snap.data().ganados || 0);
+        setPerdidos(snap.data().perdidos || 0);
       }
-      setLoading(false);
     };
-    traerDatos();
+    cargarEstadisticas();
+    nuevaRonda();
   }, [uid]);
 
-  const guardarResultado = async (acierto) => {
-    if (!uid) return;
-    const fecha = new Date().toISOString();
+  const nuevaRonda = async () => {
+    setCargando(true);
+    setSeleccionado(null);
+    try {
+      const pagina = Math.floor(Math.random() * 42) + 1;
+      const res = await fetch(`https://rickandmortyapi.com/api/character?page=${pagina}`);
+      const data = await res.json();
+      const mezclados = [...(data.results || [])].sort(() => Math.random() - 0.5);
+      const cuatro = mezclados.slice(0, 4);
+      const objetivo = cuatro[0];
+      const opcionesMezcladas = [...cuatro].sort(() => Math.random() - 0.5);
 
-    const resultado = {
-      uid,
-      pokemon: pokemonName,
-      aciertos: acierto ? 1 : 0,
-      errores: acierto ? 0 : 1,
-      fecha,
-    };
+      setCorrecto(objetivo);
+      setOpciones(opcionesMezcladas);
+    } catch (error) {
+      console.error('Error cargando ronda:', error);
+    } finally {
+      setCargando(false);
+    }
+  };
+
+  const responder = async (opcion) => {
+    if (seleccionado || !correcto || !uid) return;
+    setSeleccionado(opcion);
+    const acerto = opcion.id === correcto.id;
+
+    if (acerto) {
+      setGanados((g) => g + 1);
+      setRacha((r) => r + 1);
+    } else {
+      setPerdidos((p) => p + 1);
+      setRacha(0);
+    }
 
     try {
-      // Guardar resultado individual
-      await setDoc(doc(db, 'resultados', `${uid}_${fecha}`), resultado);
+      const refUsuario = doc(db, 'usuarios', uid);
+      await updateDoc(
+        refUsuario,
+        acerto ? { ganados: increment(1) } : { perdidos: increment(1) }
+      );
 
-      // Actualizar campos ganados/perdidos del usuario
-      const docRef = doc(db, 'usuarios', uid);
-      await updateDoc(docRef, {
-        ganados: acierto ? userWin + 1 : userWin,
-        perdidos: !acierto ? userLose + 1 : userLose,
+      await addDoc(collection(db, 'resultados'), {
+        uid,
+        personaje: correcto.name,
+        gano: acerto,
+        fecha: new Date().toISOString(),
       });
-    } catch (e) {
-      console.error('Error al guardar resultado:', e);
-    }
-  };
-  
-
-  useEffect(() => {
-    const getRandomPokemon = async () => {
-      const id = Math.floor(Math.random() * 1025) + 1;
-      try {
-        const response = await fetch(`https://pokeapi.co/api/v2/pokemon/${id}`);
-        const data = await response.json();
-        setPokemonName(data.name.toUpperCase());
-        setPokemonId(data.id);
-        setPokemonImage(
-          `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${id}.png`
-        );
-        setLoading(false);
-      } catch (err) {
-        console.error('Error al obtener el Pokémon:', err);
-      }
-    };
-    getRandomPokemon();
-  }, []);
-
-
-  const handleLetterClick = async (letter) => {
-    if (guessedLetters.includes(letter) || gameOver || gameWon) return;
-
-    const updatedGuessed = [...guessedLetters, letter];
-    setGuessedLetters(updatedGuessed);
-
-    if (!pokemonName.includes(letter)) {
-      const newWrongGuesses = wrongGuesses + 1;
-      setWrongGuesses(newWrongGuesses);
-      if (newWrongGuesses >= MAX_ATTEMPTS) {
-        setGameOver(true);
-        setUserLose(userLose + 1)
-        await guardarResultado(false);
-      }
-    } else {
-      const allCorrect = pokemonName
-        .split('')
-        .every((l) => updatedGuessed.includes(l));
-      if (allCorrect) {
-        setGameWon(true);
-        setUserWin(userWin + 1)
-        await guardarResultado(true);
-      }
+    } catch (error) {
+      console.error('Error guardando resultado:', error);
     }
   };
 
-  const renderWord = () =>
-    pokemonName.split('').map((letter, index) => (
-      <Text key={index} style={styles.letter}>
-        {guessedLetters.includes(letter) || gameOver || gameWon ? letter : '_'}
-      </Text>
-    ));
-
-  const restartGame = () => {
-    setGuessedLetters([]);
-    setWrongGuesses(0);
-    setGameOver(false);
-    setGameWon(false);
-    setLoading(true);
-    setPokemonName('');
-    setPokemonId('');
-    setPokemonImage('');
-    // vuelve a buscar un Pokémon nuevo
-    const id = Math.floor(Math.random() * 1025) + 1;
-    fetch(`https://pokeapi.co/api/v2/pokemon/${id}`)
-      .then((res) => res.json())
-      .then((data) => {
-        setPokemonName(data.name.toUpperCase());
-        setPokemonId(data.id);
-        setPokemonImage(
-          `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${id}.png`
-        );
-        setLoading(false);
-      });
-  };
+  if (cargando || !correcto) {
+    return (
+      <View style={styles.centrado}>
+        <ActivityIndicator size="large" color="#22c55e" />
+      </View>
+    );
+  }
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Adivina el Pokémon</Text>
-      <Text style={styles.stats}>Ganados: {userWin} | Perdidos: {userLose}</Text>
-      {loading ? (
-        <ActivityIndicator size="large" />
-      ) : (
-        <>
-          <Text>{pokemonId}</Text>
-          <Image source={{ uri: pokemonImage }} style={styles.image} />
-          <View style={styles.wordContainer}>{renderWord()}</View>
+    <ScrollView contentContainerStyle={styles.contenedor}>
+      <Text style={styles.titulo}>Trivia del Multiverso</Text>
+      <Text style={styles.subtitulo}>¿Quién es este personaje?</Text>
 
-          <View style={styles.keyboard}>
-            {ALPHABET.map((letter) => (
-              <TouchableOpacity
-                key={letter}
-                onPress={() => handleLetterClick(letter)}
-                disabled={guessedLetters.includes(letter) || gameOver || gameWon}
-                style={[
-                  styles.key,
-                  guessedLetters.includes(letter) && styles.keyDisabled,
-                ]}
-              >
-                <Text>{letter}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+      <View style={styles.marcador}>
+        <Text style={styles.datoMarcador}>Aciertos: {ganados}</Text>
+        <Text style={styles.datoMarcador}>Fallos: {perdidos}</Text>
+        <Text style={styles.datoRacha}>Racha: {racha}</Text>
+      </View>
 
-          <Text style={styles.attempts}>
-            Fallos: {wrongGuesses} / {MAX_ATTEMPTS}
-          </Text>
+      <View style={styles.tarjeta}>
+        <Image source={{ uri: correcto.image }} style={styles.imagen} />
+        <Text style={styles.pista}>Origen: {correcto.origin?.name || 'Desconocido'}</Text>
+        <Text style={styles.pista}>Especie: {correcto.species}</Text>
+      </View>
 
-          {gameOver && (
-            <Text style={styles.lost}>💀 ¡Perdiste! Era: {pokemonName}</Text>
-          )}
-          {gameWon && <Text style={styles.won}>🎉 ¡Ganaste!</Text>}
+      <View style={styles.listaOpciones}>
+        {opciones.map((op) => {
+          let estiloBoton = styles.opcion;
+          if (seleccionado) {
+            if (op.id === correcto.id) estiloBoton = [styles.opcion, styles.opcionCorrecta];
+            else if (op.id === seleccionado.id) estiloBoton = [styles.opcion, styles.opcionIncorrecta];
+          }
 
-          {(gameOver || gameWon) && (
-            <TouchableOpacity style={styles.button} onPress={restartGame}>
-              <Text style={styles.buttonText}>Jugar otra vez</Text>
+          return (
+            <TouchableOpacity
+              key={op.id}
+              style={estiloBoton}
+              disabled={!!seleccionado}
+              onPress={() => responder(op)}
+            >
+              <Text style={styles.textoOpcion}>{op.name}</Text>
             </TouchableOpacity>
-          )}
-        </>
+          );
+        })}
+      </View>
+
+      {seleccionado && (
+        <View style={styles.resultadoCaja}>
+          <Text style={seleccionado.id === correcto.id ? styles.textoGano : styles.textoPerdio}>
+            {seleccionado.id === correcto.id
+              ? '¡Correcto! Portal estabilizado'
+              : `Incorrecto. Era ${correcto.name}`}
+          </Text>
+          <TouchableOpacity style={styles.botonSiguiente} onPress={nuevaRonda}>
+            <Text style={styles.textoSiguiente}>Siguiente personaje</Text>
+          </TouchableOpacity>
+        </View>
       )}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 20, alignItems: 'center' },
-  title: { fontSize: 24, marginBottom: 10 },
-  image: { width: 150, height: 150, marginVertical: 10 },
-  stats: { marginBottom: 10, fontSize: 16 },
-  wordContainer: { flexDirection: 'row', marginBottom: 20, flexWrap: 'wrap' },
-  letter: { fontSize: 28, marginHorizontal: 4 },
-  keyboard: {
+  centrado: { flex: 1, backgroundColor: '#0b0f19', justifyContent: 'center', alignItems: 'center' },
+  contenedor: { flexGrow: 1, backgroundColor: '#0b0f19', padding: 20, paddingTop: 45, alignItems: 'center' },
+  titulo: { fontSize: 24, fontWeight: 'bold', color: '#22c55e' },
+  subtitulo: { fontSize: 14, color: '#9ca3af', marginBottom: 14 },
+  marcador: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    marginBottom: 20,
+    justifyContent: 'space-around',
+    width: '100%',
+    backgroundColor: '#111827',
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 18,
+    borderWidth: 1,
+    borderColor: '#1f2937',
   },
-  key: {
-    backgroundColor: '#eee',
-    padding: 10,
-    margin: 4,
-    borderRadius: 4,
-    width: 40,
+  datoMarcador: { color: '#f9fafb', fontWeight: '600' },
+  datoRacha: { color: '#22c55e', fontWeight: 'bold' },
+  tarjeta: {
+    alignItems: 'center',
+    backgroundColor: '#111827',
+    padding: 16,
+    borderRadius: 16,
+    width: '100%',
+    marginBottom: 18,
+    borderWidth: 1,
+    borderColor: '#1f2937',
+  },
+  imagen: { width: 170, height: 170, borderRadius: 85, marginBottom: 10, borderWidth: 2, borderColor: '#22c55e' },
+  pista: { color: '#d1d5db', fontSize: 13, marginTop: 2 },
+  listaOpciones: { width: '100%' },
+  opcion: {
+    backgroundColor: '#111827',
+    padding: 14,
+    borderRadius: 10,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#374151',
     alignItems: 'center',
   },
-  keyDisabled: {
-    backgroundColor: '#ccc',
+  opcionCorrecta: { backgroundColor: '#14532d', borderColor: '#22c55e' },
+  opcionIncorrecta: { backgroundColor: '#7f1d1d', borderColor: '#ef4444' },
+  textoOpcion: { color: '#f9fafb', fontSize: 15, fontWeight: '600' },
+  resultadoCaja: { alignItems: 'center', marginTop: 10, width: '100%' },
+  textoGano: { color: '#22c55e', fontSize: 16, fontWeight: 'bold', marginBottom: 10 },
+  textoPerdio: { color: '#ef4444', fontSize: 16, fontWeight: 'bold', marginBottom: 10 },
+  botonSiguiente: {
+    backgroundColor: '#22c55e',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 10,
   },
-  attempts: { fontSize: 16, marginBottom: 10 },
-  lost: { color: 'red', fontSize: 18 },
-  won: { color: 'green', fontSize: 18 },
-  button: {
-    marginTop: 10,
-    padding: 10,
-    backgroundColor: '#0066cc',
-    borderRadius: 5,
-  },
-  buttonText: { color: 'white', fontWeight: 'bold' },
+  textoSiguiente: { color: '#0b0f19', fontWeight: 'bold', fontSize: 15 },
 });
